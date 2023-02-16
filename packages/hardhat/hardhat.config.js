@@ -2,6 +2,7 @@ require("dotenv").config();
 const { utils } = require("ethers");
 const fs = require("fs");
 const chalk = require("chalk");
+const { Interface } = require("ethers/lib/utils");
 
 require("@nomiclabs/hardhat-waffle");
 require("@tenderly/hardhat-tenderly");
@@ -669,6 +670,55 @@ task("claimPhisher", "Claim if name is phisher")
     }
   });
 
+
+task("checkIfPhisher", "Check if name is phisher")
+  .addParam("name", "Phisher name")
+  .addParam("contract", "Contract address")
+  .setAction(async (args, hre) => {
+    const { contract: contractAddress, name} = args;
+    await hre.run("compile");
+    const Contract = await hre.ethers.getContractFactory("PhisherRegistry");
+    const contract = Contract.attach(contractAddress);
+    const codedName = `TWT:${name.toLowerCase()}`;
+
+    const isNamePhisher = await contract.isPhisher(codedName);
+    console.log("isNamePhisher : ", isNamePhisher);
+    
+  });
+
+task("checkIfPhisherRPC", "Check if name is phisher via RPC")
+  .addParam("name", "Phisher name")
+  .addParam("contract", "Contract address")
+  .setAction(async (args, hre) => {
+    const { contract: contractAddress, name, remove } = args;
+    await hre.run("compile");
+        
+    const iface = new Interface([
+      "function isPhisher(string name) view returns (bool)"
+    ]);
+
+    const codedName = `TWT:${name.toLowerCase()}`;
+    const abiEncodedData = iface.encodeFunctionData("isPhisher", [codedName]);
+
+    // Note : no url is specified, JsonRpcProvider() will use default (i.e. http://localhost:8545)
+    const provider = new ethers.providers.JsonRpcProvider(); 
+    const response = await provider.send("eth_call", [
+      {
+        "from": null,
+        "to": contractAddress,
+        "data": abiEncodedData,
+      },
+      "latest",
+    ]);
+    
+    console.log("abiEncodedData : ", abiEncodedData);
+    console.log("Raw response : ", response);
+
+    const isNamePhisher = iface.decodeFunctionResult("isPhisher", response);
+    console.log("isNamePhisher", isNamePhisher);
+    
+  });
+
 task("claimMember", "Claim if name is member")
   .addParam("name", "Member name")
   .addParam("contract", "Contract address")
@@ -697,3 +747,54 @@ task("claimMember", "Claim if name is member")
       }
     }
   });
+
+task("checkIfMember", "Check if name is member")
+  .addParam("name", "Member name")
+  .addParam("contract", "Contract address")
+  .setAction(async (args, hre) => {
+    const { contract: contractAddress, name} = args;
+    await hre.run("compile");
+    const Contract = await hre.ethers.getContractFactory("PhisherRegistry");
+    const contract = Contract.attach(contractAddress);
+    const codedName = `TWT:${name.toLowerCase()}`;
+
+    const isNameMember = await contract.isMember(codedName);
+    console.log("isNameMember : ", isNameMember);
+    
+  });
+
+
+
+task("checkIfMemberRPC", "Check if name is member via RPC")
+  .addParam("name", "Member name")
+  .addParam("contract", "Contract address")
+  .setAction(async (args, hre) => {
+    const { contract: contractAddress, name, remove } = args;
+    await hre.run("compile");
+        
+    const iface = new Interface([
+      "function isMember(string name) view returns (bool)"
+    ]);
+
+    const codedName = `TWT:${name.toLowerCase()}`;
+    const abiEncodedData = iface.encodeFunctionData("isMember", [codedName]);
+
+    // Note : no url is specified, JsonRpcProvider() will use default (i.e. http://localhost:8545)
+    const provider = new ethers.providers.JsonRpcProvider(); 
+    const response = await provider.send("eth_call", [
+      {
+        "from": null,
+        "to": contractAddress,
+        "data": abiEncodedData,
+      },
+      "latest",
+    ]);
+    
+    console.log("abiEncodedData : ", abiEncodedData);
+    console.log("Raw response : ", response);
+
+    const isNameMember = iface.decodeFunctionResult("isMember", response);
+    console.log("isNameMember", isNameMember);
+    
+  });
+
