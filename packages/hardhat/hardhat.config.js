@@ -2,9 +2,7 @@ require("dotenv").config();
 const { utils } = require("ethers");
 const fs = require("fs");
 const chalk = require("chalk");
-const secp256k1 = require("secp256k1");
-const { Interface } = require("ethers/lib/utils");
-const { generateUtil } = require('eth-delegatable-utils');
+const { generateUtil } = require("eth-delegatable-utils");
 
 require("@nomiclabs/hardhat-waffle");
 require("@tenderly/hardhat-tenderly");
@@ -14,6 +12,8 @@ require("hardhat-deploy");
 
 require("@eth-optimism/hardhat-ovm");
 require("@nomiclabs/hardhat-ethers");
+
+const CONTRACT_NAME = 'MobyMask';
 
 const { isAddress, getAddress, formatUnits, parseUnits } = utils;
 
@@ -93,6 +93,9 @@ module.exports = {
 
       */
       mnemonic: mnemonic(),
+    },
+    laconic: {
+      url: "http://localhost:8545"
     },
 
     rinkeby: {
@@ -643,27 +646,40 @@ task("send", "Send ETH")
     return send(fromSigner, txRequest);
   });
 
+task("deployWithKey", "deploy MobyMask contract with private key")
+  .addParam("key", "Private key of deployer")
+  .setAction(async (args, hre) => {
+    const { key: privateKey } = args;
+    await hre.run("compile");
+    const wallet = new hre.ethers.Wallet(privateKey, hre.ethers.provider);
+    const contractFactory = await hre.ethers.getContractFactory("PhisherRegistry", wallet);
+    const contract = await contractFactory.deploy(CONTRACT_NAME);
+
+    console.log(
+      chalk.cyan("Contract deployed to:"),
+      chalk.magenta(contract.address)
+    );
+  })
+
 task("claimPhisher", "Claim if name is phisher")
   .addParam("name", "Phisher name")
   .addParam("contract", "Contract address")
-  .addParam("key", "Private key of tx signer")
   .addOptionalParam("remove", "Remove from phisher list", false, types.boolean)
+  .addOptionalParam("key", "Private key of tx signer")
   .setAction(async (args, hre) => {
-    const { contract: contractAddress, name, key, remove } = args;
+    const { contract: contractAddress, name, remove, key } = args;
     await hre.run("compile");
 
-    const privateKeyHex = parsePrivateKey(key);
-    const ethAddress = ethAddressFromPrivateKey(privateKeyHex);
-
-    const jsonRpcProvider = new ethers.providers.JsonRpcProvider(); 
-    const signer = await jsonRpcProvider.getSigner(ethAddress);
-
-    const contractFactory = await hre.ethers.getContractFactory("PhisherRegistry");
-    const contract = contractFactory.attach(contractAddress);
-    const contractWithSigner = contract.connect(signer);
+    const Contract = await hre.ethers.getContractFactory("PhisherRegistry");
+    let contract = Contract.attach(contractAddress);
+    
+    if (key) {
+      const wallet = new hre.ethers.Wallet(key, hre.ethers.provider);
+      contract = contract.connect(wallet);
+    }
 
     const codedName = `TWT:${name.toLowerCase()}`;
-    const transaction = await contractWithSigner.claimIfPhisher(codedName, !remove);
+    const transaction = await contract.claimIfPhisher(codedName, !remove);
     const receipt = await transaction.wait();
 
     if (receipt.events) {
@@ -693,15 +709,13 @@ task("checkIfPhisher", "Check if name is phisher")
 
     const isNamePhisher = await contract.isPhisher(codedName);
     console.log("isNamePhisher : ", isNamePhisher);
-    
   });
 
 task("checkIfPhisherRPC", "Check if name is phisher via RPC")
   .addParam("name", "Phisher name")
   .addParam("contract", "Contract address")
   .setAction(async (args, hre) => {
-    const { contract: contractAddress, name, remove } = args;
-    await hre.run("compile");
+    const { contract: contractAddress, name } = args;
         
     const iface = new Interface([
       "function isPhisher(string name) view returns (bool)"
@@ -710,8 +724,7 @@ task("checkIfPhisherRPC", "Check if name is phisher via RPC")
     const codedName = `TWT:${name.toLowerCase()}`;
     const abiEncodedData = iface.encodeFunctionData("isPhisher", [codedName]);
 
-    // Note : no url is specified, JsonRpcProvider() will use default (i.e. http://localhost:8545)
-    const provider = new ethers.providers.JsonRpcProvider(); 
+    const provider = new ethers.provider; 
     const response = await provider.send("eth_call", [
       {
         "from": null,
@@ -721,36 +734,31 @@ task("checkIfPhisherRPC", "Check if name is phisher via RPC")
       "latest",
     ]);
     
-    console.log("abiEncodedData : ", abiEncodedData);
-    console.log("Raw response : ", response);
-
+    debug("abiEncodedData : ", abiEncodedData);
+    debug("Raw response : ", response);
     const isNamePhisher = iface.decodeFunctionResult("isPhisher", response);
     console.log("isNamePhisher", isNamePhisher);
-    
   });
 
 task("claimMember", "Claim if name is member")
   .addParam("name", "Member name")
   .addParam("contract", "Contract address")
-  .addParam("key", "Private key of tx signer")
   .addOptionalParam("remove", "Remove from member list", false, types.boolean)
+  .addOptionalParam("key", "Private key of tx signer")
   .setAction(async (args, hre) => {
-    const { contract: contractAddress, name, key, remove } = args;
+    const { contract: contractAddress, name, remove, key } = args;
     await hre.run("compile");
 
-    const privateKeyHex = parsePrivateKey(key);
-    const ethAddress = ethAddressFromPrivateKey(privateKeyHex);
+    const Contract = await hre.ethers.getContractFactory("PhisherRegistry");
+    let contract = Contract.attach(contractAddress);
 
-    const jsonRpcProvider = new ethers.providers.JsonRpcProvider(); 
-    const signer = await jsonRpcProvider.getSigner(ethAddress);
-    console.log(signer);
+    if (key) {
+      const wallet = new hre.ethers.Wallet(key,hre.ethers.provider);
+      contract = contract.connect(wallet);
+    }
 
-    const contractFactory = await hre.ethers.getContractFactory("PhisherRegistry");
-    const contract = contractFactory.attach(contractAddress);
-    const contractWithSigner = contract.connect(signer);
-    
     const codedName = `TWT:${name.toLowerCase()}`;
-    const transaction = await contractWithSigner.claimIfMember(codedName, !remove);
+    const transaction = await contract.claimIfMember(codedName, !remove);
     const receipt = await transaction.wait();
 
     if (receipt.events) {
@@ -779,17 +787,13 @@ task("checkIfMember", "Check if name is member")
 
     const isNameMember = await contract.isMember(codedName);
     console.log("isNameMember : ", isNameMember);
-    
   });
-
-
 
 task("checkIfMemberRPC", "Check if name is member via RPC")
   .addParam("name", "Member name")
   .addParam("contract", "Contract address")
   .setAction(async (args, hre) => {
     const { contract: contractAddress, name } = args;
-    await hre.run("compile");
         
     const iface = new Interface([
       "function isMember(string name) view returns (bool)"
@@ -798,8 +802,7 @@ task("checkIfMemberRPC", "Check if name is member via RPC")
     const codedName = `TWT:${name.toLowerCase()}`;
     const abiEncodedData = iface.encodeFunctionData("isMember", [codedName]);
 
-    // Note : no url is specified, JsonRpcProvider() will use default (i.e. http://localhost:8545)
-    const provider = new ethers.providers.JsonRpcProvider(); 
+    const provider = new ethers.provider; 
     const response = await provider.send("eth_call", [
       {
         "from": null,
@@ -809,74 +812,86 @@ task("checkIfMemberRPC", "Check if name is member via RPC")
       "latest",
     ]);
     
-    console.log("abiEncodedData : ", abiEncodedData);
-    console.log("Raw response : ", response);
-
+    debug("abiEncodedData : ", abiEncodedData);
+    debug("Raw response : ", response);
     const isNameMember = iface.decodeFunctionResult("isMember", response);
     console.log("isNameMember", isNameMember);
-    
   });
 
 task("getEthAddrOf", "Returns ethereum address for given private key")
   .addParam("key", "Private key of tx signer")
   .setAction(async (args, hre) => {
     const { key } = args;
-    await hre.run("compile");
 
-    const privateKeyHex = parsePrivateKey(key);
-    const ethAddress = ethAddressFromPrivateKey(privateKeyHex);
-    console.log("Addr :", ethAddress);
+    const wallet = new hre.ethers.Wallet(key)
+    console.log("Address :", wallet.address);
   });
 
-  task("invoketest", "Invokes a particular transaction for the delegate on behalf of the authorizer")
+task("testInvoke", "Invokes a transaction for the delegate on behalf of the authorizer")
   .addParam("contract", "Contract address")
   .addParam("delegate", "Private key of delegate account")  
-  .addParam("delegator", "Private key of delegator account")
+  .addParam("delegator", "Private key of delegator account (contract owner)")
   .setAction(async (args, hre) => {
-    const { contract: contractAddress, delegate:acc1KeyHex, delegator:ownerKeyHex} = args;
-    await hre.run("compile");
+    const { contract: contractAddress, delegate: delegateKey, delegator: delegatorKey} = args;
 
-    const delegateKey = acc1KeyHex;
-    const delegatorKey = ownerKeyHex;
-    const delegateKeyHex = parsePrivateKey(delegateKey);
-    const delegatorKeyHex = parsePrivateKey(delegatorKey);
-    const delegateAddr = ethAddressFromPrivateKey(delegateKeyHex);
-    const delegatorAddr = ethAddressFromPrivateKey(delegatorKeyHex);
+    const delegate = new ethers.Wallet(delegateKey, hre.ethers.provider);
+    const yourContract = await hre.ethers.getContractAt("PhisherRegistry", contractAddress);
+    const phisherString = 'testPhisher'
+    const { chainId } = await yourContract.provider.getNetwork();
 
-    console.log(contractAddress);
-    console.log(delegateKey);
-    console.log(delegateAddr);
-    console.log(delegatorKey);
-    console.log(delegatorAddr);
-
-    const ok = {
-      contractAddress,
-      delegateKey,
-      delegateAddr,
-      delegatorKey,
-      delegatorAddr
+    const utilOpts = {
+      chainId,
+      verifyingContract: yourContract.address,
+      name: CONTRACT_NAME,      
     };
-    // writes args to a json file, use this to tun scripts/invoke-no-hardhat.js
-    fs.writeFileSync('test.json', JSON.stringify(ok));
-  });
 
+    const util = generateUtil(utilOpts);
 
-const parsePrivateKey = (privateKey) => {
-    var result = [];
-    for(var i = 0; i < privateKey.length; i+=2)
-    {
-        result.push(parseInt(privateKey.substring(i, i + 2), 16));
+    // Prepare the delegation message:
+    // This message has no caveats, and authority 0,
+    // so it is a simple delegation to delegate with no restrictions,
+    // and will allow the delegate to perform any action the signer could perform on this contract.
+    const delegation = {
+      delegate: delegate.address,
+      authority: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      caveats: [],
+    };
+
+    const signedDelegation = util.signDelegation(delegation, delegatorKey);
+    const desiredTx = await yourContract.populateTransaction.claimIfPhisher(phisherString, true);
+    const queue = Math.floor(Math.random() * 100000000);
+
+    const invocationMessage = {
+      replayProtection: {
+        nonce: '0x01',
+        queue
+      },
+      batch: [{
+        authority: [signedDelegation],
+        transaction: {
+          to: yourContract.address,
+          gasLimit: '10000000000000000',
+          data: desiredTx.data,
+        }
+      }]
+    };
+
+    // Delegate signs the invocation message:
+    const signedInvocation= util.signInvocation(invocationMessage, delegateKey);
+    // A third party can submit the invocation method to the chain:
+    const transaction = await yourContract.connect(delegate).invoke([signedInvocation]);
+    const receipt = await transaction.wait();
+
+    if (receipt.events) {
+      const PhisherStatusUpdatedEvent = receipt.events.find(
+        (el) => el.event === "PhisherStatusUpdated"
+      );
+
+      if (PhisherStatusUpdatedEvent && PhisherStatusUpdatedEvent.args) {
+        console.log(
+          "PhisherStatusUpdated Event args",
+          PhisherStatusUpdatedEvent.args
+        );
+      }
     }
-    
-    return Uint8Array.from(result);
-};
-
-// generates ethereum address from account's private key
-const ethAddressFromPrivateKey = (privateKey) => {
-    const publicKey = secp256k1.publicKeyCreate(privateKey);
-    const ethAddress = utils.computeAddress(publicKey);
-    return ethAddress;
-};
-
-
-
+  });
