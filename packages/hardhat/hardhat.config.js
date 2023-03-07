@@ -696,7 +696,6 @@ task("claimPhisher", "Claim if name is phisher")
     }
   });
 
-
 task("checkIfPhisher", "Check if name is phisher")
   .addParam("name", "Phisher name")
   .addParam("contract", "Contract address")
@@ -709,35 +708,6 @@ task("checkIfPhisher", "Check if name is phisher")
 
     const isNamePhisher = await contract.isPhisher(codedName);
     console.log("isNamePhisher : ", isNamePhisher);
-  });
-
-task("checkIfPhisherRPC", "Check if name is phisher via RPC")
-  .addParam("name", "Phisher name")
-  .addParam("contract", "Contract address")
-  .setAction(async (args, hre) => {
-    const { contract: contractAddress, name } = args;
-        
-    const iface = new Interface([
-      "function isPhisher(string name) view returns (bool)"
-    ]);
-
-    const codedName = `TWT:${name.toLowerCase()}`;
-    const abiEncodedData = iface.encodeFunctionData("isPhisher", [codedName]);
-
-    const provider = new ethers.provider; 
-    const response = await provider.send("eth_call", [
-      {
-        "from": null,
-        "to": contractAddress,
-        "data": abiEncodedData,
-      },
-      "latest",
-    ]);
-    
-    debug("abiEncodedData : ", abiEncodedData);
-    debug("Raw response : ", response);
-    const isNamePhisher = iface.decodeFunctionResult("isPhisher", response);
-    console.log("isNamePhisher", isNamePhisher);
   });
 
 task("claimMember", "Claim if name is member")
@@ -787,44 +757,6 @@ task("checkIfMember", "Check if name is member")
 
     const isNameMember = await contract.isMember(codedName);
     console.log("isNameMember : ", isNameMember);
-  });
-
-task("checkIfMemberRPC", "Check if name is member via RPC")
-  .addParam("name", "Member name")
-  .addParam("contract", "Contract address")
-  .setAction(async (args, hre) => {
-    const { contract: contractAddress, name } = args;
-        
-    const iface = new Interface([
-      "function isMember(string name) view returns (bool)"
-    ]);
-
-    const codedName = `TWT:${name.toLowerCase()}`;
-    const abiEncodedData = iface.encodeFunctionData("isMember", [codedName]);
-
-    const provider = new ethers.provider; 
-    const response = await provider.send("eth_call", [
-      {
-        "from": null,
-        "to": contractAddress,
-        "data": abiEncodedData,
-      },
-      "latest",
-    ]);
-    
-    debug("abiEncodedData : ", abiEncodedData);
-    debug("Raw response : ", response);
-    const isNameMember = iface.decodeFunctionResult("isMember", response);
-    console.log("isNameMember", isNameMember);
-  });
-
-task("getEthAddrOf", "Returns ethereum address for given private key")
-  .addParam("key", "Private key of tx signer")
-  .setAction(async (args, hre) => {
-    const { key } = args;
-
-    const wallet = new hre.ethers.Wallet(key)
-    console.log("Address :", wallet.address);
   });
 
 task("testInvoke", "Invokes a transaction for the delegate on behalf of the authorizer")
