@@ -2,6 +2,7 @@ require("dotenv").config();
 const { utils } = require("ethers");
 const fs = require("fs");
 const chalk = require("chalk");
+const { generateUtil } = require("eth-delegatable-utils");
 
 require("@nomiclabs/hardhat-waffle");
 require("@tenderly/hardhat-tenderly");
@@ -11,6 +12,8 @@ require("hardhat-deploy");
 
 require("@eth-optimism/hardhat-ovm");
 require("@nomiclabs/hardhat-ethers");
+
+const CONTRACT_NAME = 'MobyMask';
 
 const { isAddress, getAddress, formatUnits, parseUnits } = utils;
 
@@ -90,6 +93,9 @@ module.exports = {
 
       */
       mnemonic: mnemonic(),
+    },
+    laconic: {
+      url: "http://localhost:8545"
     },
 
     rinkeby: {
@@ -640,19 +646,39 @@ task("send", "Send ETH")
     return send(fromSigner, txRequest);
   });
 
+task("deployWithKey", "deploy MobyMask contract with private key")
+  .addParam("key", "Private key of deployer")
+  .setAction(async (args, hre) => {
+    const { key: privateKey } = args;
+    await hre.run("compile");
+    const wallet = new hre.ethers.Wallet(privateKey, hre.ethers.provider);
+    const contractFactory = await hre.ethers.getContractFactory("PhisherRegistry", wallet);
+    const contract = await contractFactory.deploy(CONTRACT_NAME);
+
+    console.log(
+      chalk.cyan("Contract deployed to:"),
+      chalk.magenta(contract.address)
+    );
+  })
+
 task("claimPhisher", "Claim if name is phisher")
   .addParam("name", "Phisher name")
   .addParam("contract", "Contract address")
   .addOptionalParam("remove", "Remove from phisher list", false, types.boolean)
+  .addOptionalParam("key", "Private key of tx signer")
   .setAction(async (args, hre) => {
-    const { contract: contractAddress, name, remove } = args;
+    const { contract: contractAddress, name, remove, key } = args;
     await hre.run("compile");
+
     const Contract = await hre.ethers.getContractFactory("PhisherRegistry");
-    const contract = Contract.attach(contractAddress);
-    const codedName = `TWT:${name.toLowerCase()}`;
+    let contract = Contract.attach(contractAddress);
 
-    const transaction = await contract.claimIfPhisher(codedName, !remove);
+    if (key) {
+      const wallet = new hre.ethers.Wallet(key, hre.ethers.provider);
+      contract = contract.connect(wallet);
+    }
 
+    const transaction = await contract.claimIfPhisher(name, !remove);
     const receipt = await transaction.wait();
 
     if (receipt.events) {
@@ -669,19 +695,37 @@ task("claimPhisher", "Claim if name is phisher")
     }
   });
 
+task("checkIfPhisher", "Check if name is phisher")
+  .addParam("name", "Phisher name")
+  .addParam("contract", "Contract address")
+  .setAction(async (args, hre) => {
+    const { contract: contractAddress, name} = args;
+    await hre.run("compile");
+    const Contract = await hre.ethers.getContractFactory("PhisherRegistry");
+    const contract = Contract.attach(contractAddress);
+
+    const isNamePhisher = await contract.isPhisher(name);
+    console.log("isNamePhisher : ", isNamePhisher);
+  });
+
 task("claimMember", "Claim if name is member")
   .addParam("name", "Member name")
   .addParam("contract", "Contract address")
   .addOptionalParam("remove", "Remove from member list", false, types.boolean)
+  .addOptionalParam("key", "Private key of tx signer")
   .setAction(async (args, hre) => {
-    const { contract: contractAddress, name, remove } = args;
+    const { contract: contractAddress, name, remove, key } = args;
     await hre.run("compile");
+
     const Contract = await hre.ethers.getContractFactory("PhisherRegistry");
-    const contract = Contract.attach(contractAddress);
-    const codedName = `TWT:${name.toLowerCase()}`;
+    let contract = Contract.attach(contractAddress);
 
-    const transaction = await contract.claimIfMember(codedName, !remove);
+    if (key) {
+      const wallet = new hre.ethers.Wallet(key,hre.ethers.provider);
+      contract = contract.connect(wallet);
+    }
 
+    const transaction = await contract.claimIfMember(name, !remove);
     const receipt = await transaction.wait();
 
     if (receipt.events) {
@@ -693,6 +737,91 @@ task("claimMember", "Claim if name is member")
         console.log(
           "PhisherStatusUpdated Event args",
           MemberStatusUpdatedEvent.args
+        );
+      }
+    }
+  });
+
+task("checkIfMember", "Check if name is member")
+  .addParam("name", "Member name")
+  .addParam("contract", "Contract address")
+  .setAction(async (args, hre) => {
+    const { contract: contractAddress, name} = args;
+    await hre.run("compile");
+    const Contract = await hre.ethers.getContractFactory("PhisherRegistry");
+    const contract = Contract.attach(contractAddress);
+
+    const isNameMember = await contract.isMember(name);
+    console.log("isNameMember : ", isNameMember);
+  });
+
+  task("testInvoke", "Test to send signed invocation to the chain")
+  .addParam("contract", "Contract address")
+  .addParam("owner", "Private key of contract owner")
+  .addParam("invoker", "Private key of account calling invoke method")
+  .setAction(async (args, hre) => {
+    const { contract: contractAddress, owner: ownerKey, invoker: invokerKey } = args;
+    const phisherString = 'testPhisher';
+
+    const yourContract = await hre.ethers.getContractAt("PhisherRegistry", contractAddress);
+    const { chainId } = await yourContract.provider.getNetwork();
+
+    const utilOpts = {
+      chainId,
+      verifyingContract: yourContract.address,
+      name: CONTRACT_NAME,
+    };
+    const util = generateUtil(utilOpts);
+
+    // Create a new Wallet with a random private key
+    const delegate = new ethers.Wallet.createRandom();
+
+    // Prepare the delegation message:
+    // This message has no caveats, and authority 0,
+    // so it is a simple delegation to delegate with no restrictions,
+    // and will allow the delegate to perform any action the signer could perform on this contract.
+    const delegation = {
+      delegate: delegate.address,
+      authority: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      caveats: [],
+    };
+
+    const signedDelegation = util.signDelegation(delegation, ownerKey);
+    const desiredTx = await yourContract.populateTransaction.claimIfPhisher(phisherString, true);
+    const queue = Math.floor(Math.random() * 100000000);
+
+    const invocationMessage = {
+      replayProtection: {
+        nonce: '0x01',
+        queue
+      },
+      batch: [{
+        authority: [signedDelegation],
+        transaction: {
+          to: yourContract.address,
+          gasLimit: '10000000000000000',
+          data: desiredTx.data,
+        }
+      }]
+    };
+
+    // Delegate signs the invocation message:
+    const signedInvocation = util.signInvocation(invocationMessage, delegate.privateKey);
+
+    // A third party can submit the signed invocation method to the chain:
+    const invoker = new ethers.Wallet(invokerKey, hre.ethers.provider);
+    const transaction = await yourContract.connect(invoker).invoke([signedInvocation]);
+    const receipt = await transaction.wait();
+
+    if (receipt.events) {
+      const PhisherStatusUpdatedEvent = receipt.events.find(
+        (el) => el.event === "PhisherStatusUpdated"
+      );
+
+      if (PhisherStatusUpdatedEvent && PhisherStatusUpdatedEvent.args) {
+        console.log(
+          "PhisherStatusUpdated Event args",
+          PhisherStatusUpdatedEvent.args
         );
       }
     }
