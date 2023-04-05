@@ -132,7 +132,6 @@
     "ship": "yarn surge",
     "theme": "npx gulp less",
     "watch": "node ./scripts/watch.js",
-    "preinstall": "npx npm-force-resolutions",
     "prettier": "npx prettier --write . '!(node_module|build)/**/*'"
   }
 }
