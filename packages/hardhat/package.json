@@ -50,6 +50,7 @@
     "deployWithKey": "hardhat deployWithKey",
     "claimPhisher": "hardhat claimPhisher",
     "claimMember": "hardhat claimMember",
-    "testInvoke": "hardhat testInvoke"
+    "testInvoke": "hardhat testInvoke",
+    "verifyDeployment": "hardhat verify-deployment"
   }
 }
